@@ -1,0 +1,5 @@
+slprj/
+*.slxc
+*.asv
+*.autosave
+data/verify_release_*.mat
