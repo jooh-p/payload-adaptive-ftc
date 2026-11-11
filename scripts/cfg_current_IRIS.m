@@ -1,65 +1,66 @@
 function C = cfg_current_IRIS()
-%% cfg_current_IRIS — 실험 조건 값을 한 곳에 모은다
+%% cfg_current_IRIS — single place for all experiment settings
 %
-% 모델, 시나리오, 평가 창, 대상 기체 제원, 파라미터 스케줄, 질량 무관 상수를 정의한다.
-% 다른 스크립트는 이 값만 읽는다.
+% Defines the model, scenario, evaluation windows, airframe data, parameter schedule
+% and mass-independent constants. All other scripts read these values only.
 %
-% 사용:  C = cfg_current_IRIS();
+% Usage:  C = cfg_current_IRIS();
 
-%% ── 모델과 시나리오 ──
-C.model = 'QuadcopterSimModel_Loiter_FTC_dseg';   % 실험 모델
-C.scn   = 'scn_delivery3_IRIS';                   % 배송 시나리오 (선회 90° 26.33~28.33 s · 고장 35.00 s · 종료 77 s)
+%% ── Model and scenario ──
+C.model = 'QuadcopterSimModel_Loiter_FTC_dseg';   % experiment model
+C.scn   = 'scn_delivery3_IRIS';                   % delivery scenario (90° turn 26.33–28.33 s · failure 35.00 s · end 77 s)
 C.TEND  = 77;
-%   평가 창 — 초기 강하 [35, 45] s · 후반 [45, 77] s
-%   45 s 는 기반 제어기(무화물)가 첫 강하 뒤 처음으로 고도를 회복하는 시점이다.
-C.EARLY = 10.0;                                   % 초기 강하 창 길이 [s] — 고장 후 [0, 10]
-C.W2    = [45 77];                                % 후반 창 [s] (절대 시각)
+%   Evaluation windows — initial drop [35, 45] s · late phase [45, 77] s
+%   45 s is when the baseline controller (no payload) first recovers altitude after the initial drop.
+C.EARLY = 10.0;                                   % initial-drop window length [s] — [0, 10] after failure
+C.W2    = [45 77];                                % late-phase window [s] (absolute time)
 
-%% ── 대상 기체 (대칭 배치 설계 기체) ──
-%   copter_params_IRIS 를 읽은 뒤 아래 값으로 덮어쓴다.
-%   ★ 반드시 copterLoadParams 뒤에 적용할 것 (앞에 두면 로드가 되돌린다)
-C.propY   = [-0.21 0.21 0.21 -0.21];              % 프로펠러 y [m] — M1 M2 M3 M4
-C.inertia = [0.021950 0.011 0.030949];            % 관성 대각 [kg·m²]
-C.POFF    = 0.10;                                 % 화물 장착 깊이 [m]
+%% ── Target airframe (symmetric rotor layout) ──
+%   Overwrites copter_params_IRIS after loading.
+%   ★ Must be applied after copterLoadParams (applying it before is undone by the load)
+C.propY   = [-0.21 0.21 0.21 -0.21];              % propeller y [m] — M1 M2 M3 M4
+C.inertia = [0.021950 0.011 0.030949];            % diagonal inertia [kg·m²]
+C.POFF    = 0.10;                                 % payload mounting depth [m]
 
-%% ── 질량 추정 기준값 ──
-%   무화물 정착 호버의 모터 회전수 제곱합 (data/symcheck_IRIS.mat)
-C.sumsqFile = 'symcheck_IRIS.mat';                % data/ 안
+%% ── Mass-estimation reference ──
+%   Sum of squared motor speeds in a settled payload-free hover (data/symcheck_IRIS.mat)
+C.sumsqFile = 'symcheck_IRIS.mat';                % in data/
 C.sumsqVar  = 'sumsq_new';
-C.sumsqChk  = 742700.6917;                        % 파일 내용 확인값
+C.sumsqChk  = 742700.6917;                        % check value of the file contents
 
-%% ── 파라미터 스케줄 ──
-%   설계 질량별 최적값. 추정 질량을 범위 안으로 자른 뒤 인접 설계 질량 사이를 선형 보간한다.
-%   아래 세 줄(PMS · injD · tabF)은 '현행 스케줄' 절에서 다시 정의된다.
-C.PMS  = [0 0.100 0.200 0.300 0.340];             % 스케줄 설계 질량 [kg]
-C.injD = [0.6155 0.6055 0.5612 0.4865 0.4484];    % 선제 추력 크기 (정규화 명령)
-C.tabF = [5.254 4.50 3.790 2.446 1.971];          % 위치 게인 배율
-%% ── 현행 스케줄 (논문 표의 값) ──
-%   베이즈 적응 직접 탐색으로 구한 설계 질량 100 · 200 · 300 · 340 g 의 최적값.
+%% ── Parameter schedule ──
+%   Optimal values per design mass. The estimated mass is clipped to the range and
+%   linearly interpolated between neighbouring design masses.
+%   The three lines below (PMS · injD · tabF) are redefined in 'Current schedule'.
+C.PMS  = [0 0.100 0.200 0.300 0.340];             % schedule design masses [kg]
+C.injD = [0.6155 0.6055 0.5612 0.4865 0.4484];    % feed-forward thrust magnitude (normalized command)
+C.tabF = [5.254 4.50 3.790 2.446 1.971];          % position gain scale
+%% ── Current schedule (values in the paper) ──
+%   Optimal values for design masses 100 · 200 · 300 · 340 g found by Bayesian adaptive direct search.
 C.PMS  = [0.100 0.200 0.300 0.340];
 C.tabF = [4.543977183 4.166586273 2.500473928 2.222778988];
 C.injD = [0.6014710808 0.5622518154 0.5113042045 0.4856299388];
-C.Jfloor = 0.64;                                 % 목적함수 후반 항 바닥 [m] — 탐색 목적함수 전용
+C.Jfloor = 0.64;                                 % floor of the late-phase term in the objective [m] — search objective only
 
-%% ── 질량과 무관한 상수 ──
-C.wy   = 253.7235;      % 요 축 제어 배분 가중치 배수
-C.thr  = 3.994963809;   % 추력 배분 가중치 배수
-C.tau  = 1.80;          % 선제 추력 지속 [s]
-C.mask = [0 0 0 0];     % 0 = 감지기가 요 오차 부호로 주입할 대각 쌍을 고른다(고장 로터 무관)
-C.aA   = 0.5;           % 자세 민첩도 — 기반 제어기 원본값
-C.aP   = 0.5;           % 위치 민첩도 — 기반 제어기 원본값
+%% ── Mass-independent constants ──
+C.wy   = 253.7235;      % yaw control allocation weight multiplier
+C.thr  = 3.994963809;   % thrust allocation weight multiplier
+C.tau  = 1.80;          % feed-forward thrust duration [s]
+C.mask = [0 0 0 0];     % 0 = the detector picks the diagonal pair from the sign of the yaw error (independent of the failed rotor)
+C.aA   = 0.5;           % attitude agility — baseline controller default
+C.aP   = 0.5;           % position agility — baseline controller default
 
-%% ── 도달 오차 기준점 (임무 실패 판정 전용, 5 m 문턱) ──
-%   기반 제어기(무화물) + 고장 판을 끝까지 돌려 얻은 마지막 표본의 위치(동쪽 127.9 m).
+%% ── Reach-error reference point (mission-failure check only, 5 m threshold) ──
+%   Last sample position of the baseline controller (no payload) + failure run (127.9 m east).
 C.destFile = fullfile(fileparts(mfilename('fullpath')), '..', 'data', 'ga_ref_dlv3_turn.mat');
 C.destVar  = 'DEST';
 
-%% ── 목적함수 (논문 식 (4)) ──
-C.Jw   = [0.5 0.5 0.05];       % 초기 강하 · 후반 최대 강하 · 후반 최대 기울기 가중
-C.Jref = [5.15 0.64 20.7];     % 무화물 기준값 [m, m, °]
-%% ── 스케줄 덮어쓰기 (선택) ──
-%   환경변수 CFG_SCHED_FILE 이 가리키는 mat 파일의 구조체 S(PMS · tabF · injD · wy · thr)로
-%   스케줄을 바꿔 평가한다. 환경변수가 없으면 아무 일도 안 한다.
+%% ── Objective (paper Eq. (4)) ──
+C.Jw   = [0.5 0.5 0.05];       % weights: initial drop · late-phase max drop · late-phase max tilt
+C.Jref = [5.15 0.64 20.7];     % payload-free reference values [m, m, °]
+%% ── Schedule override (optional) ──
+%   Evaluates with the schedule in struct S (PMS · tabF · injD · wy · thr) of the mat file
+%   given by environment variable CFG_SCHED_FILE. Does nothing if the variable is not set.
 SF = getenv('CFG_SCHED_FILE');
 if ~isempty(SF) && isfile(SF)
     Z = load(SF);  S = Z.S;

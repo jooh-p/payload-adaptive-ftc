@@ -1,29 +1,29 @@
 function [r, d] = run_case_IRIS(ctx, kind, PM, fail, over)
-%% run_case_IRIS — 제어기 한 판을 돌려 지표를 돌려준다
+%% run_case_IRIS — run one case and return its metrics
 %
-% ┌─ 무엇을 돌리나 ─────────────────────────────────────────────────────
-% │ 가      무화물 · 기반 제어기 · 고장 있음          (참조선)
-% │ 나      화물   · 기반 제어기 · 고장 있음          (무적응 기준선)
-% │ 다      화물   · 감지 순간 파라미터 넷 전환       (제안)
-% │ 무고장  화물   · 기반 제어기 · 고장 없음
+% ┌─ Cases ─────────────────────────────────────────────────────────────
+% │ 가      no payload · baseline controller · failure        (reference)
+% │ 나      payload    · baseline controller · failure        (non-adaptive baseline)
+% │ 다      payload    · parameters switched at detection     (proposed)
+% │ 무고장  payload    · baseline controller · no failure
 % └─────────────────────────────────────────────────────────────────────
 %
-% 입력
-%   ctx   ctx_current_IRIS() 의 꾸러미
+% Inputs
+%   ctx   context from ctx_current_IRIS()
 %   kind  '가' | '나' | '다' | '무고장'
-%   PM    화물 질량 [kg] (가는 0)
-%   fail  고장 로터 번호 1~4 (기본 2)
-%   over  (선택) mkctrl_current_IRIS 의 덮어쓰기 — .fsel · .dadd · .wy · .thr
+%   PM    payload mass [kg] (0 for 가)
+%   fail  failed rotor number 1–4 (default 2)
+%   over  (optional) overrides for mkctrl_current_IRIS — .fsel · .dadd · .wy · .thr
 %
-% 출력 r
-%   e 초기 강하 [m] · l 후반 최대 강하 [m] · tilt 후반 최대 기울기 [°] · reH 도달 오차 [m]
-%   alive 생존 · mest 추정 질량 [kg] · fsel · dsel · tdet 감지 시각 [s]
-%   무고장이면 crdev 순항 고도 편차 · crspd 순항 속도 · tiltmax
+% Output r
+%   e initial drop [m] · l late-phase max drop [m] · tilt late-phase max tilt [°] · reH reach error [m]
+%   alive survived · mest estimated mass [kg] · fsel · dsel · tdet detection time [s]
+%   for 무고장: crdev cruise altitude deviation · crspd cruise speed · tiltmax
 %
-% 출력 d  (선택) 그 판의 시계열 — t · pn · pe · alt · te · tilt · tr · r
-%   추종 오차처럼 시계열이 필요한 지표를 밖에서 계산할 때 쓴다
+% Output d  (optional) time series of the case — t · pn · pe · alt · te · tilt · tr · r
+%   for computing time-series metrics (e.g. tracking error) outside this function
 %
-% 평가 창 값은 cfg_current_IRIS.
+% Evaluation window values are in cfg_current_IRIS.
 
 if nargin < 4 || isempty(fail), fail = 2; end
 if nargin < 5, over = struct(); end
@@ -32,35 +32,35 @@ nofail = strcmp(kind, '무고장');
 base   = any(strcmp(kind, {'가','나'}));
 if strcmp(kind, '가'), PM = 0; end
 
-%% ── 시뮬 변수 ──
+%% ── Simulation variables ──
 V = basevars_IRIS(ctx.cdry, ctx.m_dry, meta, PM, C.POFF, T, C.TEND, ~nofail);
-% ★ 플랜트 화물 물리 갈고리 — ctx.plantmode 가 있을 때만 동작한다.
-%   'box'(기본)  상자 관성 = 위치 관성 + 상자 형상 관성
-%   'point'      점질량 = 위치 관성만
-%   'massonly'   질량만 늘리고 관성은 무화물 값 그대로
-%   ★ 공력 갈고리보다 먼저 둘 것. 뒤에 두면 V.copter 를 통째로 바꿔 aero 를 되돌린다.
+% ★ Payload physics hook — active only if ctx.plantmode is set.
+%   'box' (default)  box inertia = offset inertia + box shape inertia
+%   'point'          point mass = offset inertia only
+%   'massonly'       mass increased, inertia kept at payload-free values
+%   ★ Must come before the aero hook; placed after, it replaces V.copter and undoes aero.
 if isfield(ctx,'plantmode') && ~isempty(ctx.plantmode) && ~strcmp(ctx.plantmode,'box')
     switch ctx.plantmode
         case 'point'
             V.copter = mkplant_payload_IRIS(ctx.cdry, PM, C.POFF, false);
         case 'massonly'
             V.copter = ctx.cdry;
-            V.copter.body.m = ctx.cdry.body.m + PM;    % 관성은 손대지 않는다
+            V.copter.body.m = ctx.cdry.body.m + PM;    % inertia not changed
         otherwise
             error('run_case_IRIS:plantmode', '알 수 없는 plantmode: %s', ctx.plantmode);
     end
 end
-% ★ 플랜트 공력 덮어쓰기 갈고리 — ctx.plantaero 가 있을 때만 동작한다.
-%   제어기는 ctx.cdry 로 따로 만들므로 여기 값은 **플랜트에만** 들어간다.
-%   예: ctx.plantaero = struct('rate_damp', 0.60)
+% ★ Drone-model aero override hook — active only if ctx.plantaero is set.
+%   The controller is built separately from ctx.cdry, so these values go into the drone model only.
+%   e.g. ctx.plantaero = struct('rate_damp', 0.60)
 if isfield(ctx,'plantaero') && ~isempty(ctx.plantaero)
     fn = fieldnames(ctx.plantaero);
     for kk = 1:numel(fn), V.copter.aero.(fn{kk}) = ctx.plantaero.(fn{kk}); end
 end
-% ★ 실험 갈고리 — 셋 다 ctx 에 그 항목이 있을 때만 동작한다. 없으면 기존 경로 그대로.
-%   ctx.plantpatch  {묶음, 항목, 값; ...} — 드론 모델에만 (예 {'prop','I',2*I0; 'bat','V',10.0})
-%   ctx.vars        구조체 — 시뮬 변수를 더한다 (예 잡음 모델의 gyro_sigma · noise_seed)
-%   ctx.blkpar      {블록 경로(모델 이름 뒤), 파라미터, 값; ...} — simseg_IRIS 가 블록 값으로 넘긴다
+% ★ Experiment hooks — each is active only if the field exists in ctx; otherwise the default path is used.
+%   ctx.plantpatch  {group, field, value; ...} — drone model only (e.g. {'prop','I',2*I0; 'bat','V',10.0})
+%   ctx.vars        struct — adds simulation variables (e.g. gyro_sigma · noise_seed of a noise model)
+%   ctx.blkpar      {block path (after model name), parameter, value; ...} — passed to simseg_IRIS as block values
 if isfield(ctx,'plantpatch') && ~isempty(ctx.plantpatch)
     for kk = 1:size(ctx.plantpatch,1)
         V.copter.(ctx.plantpatch{kk,1}).(ctx.plantpatch{kk,2}) = ctx.plantpatch{kk,3};
@@ -82,7 +82,7 @@ F50 = mkctrl_current_IRIS('base', ctx.cdry, C.POFF);
 r   = struct('mest',NaN, 'fsel',NaN, 'dsel',NaN, 'tdet',NaN, ...
              'crdev',NaN, 'crspd',NaN, 'tiltmax',NaN);
 
-%% ── 가 · 나 — 기반 제어기 한 판 ──
+%% ── 가 · 나 — one baseline-controller run ──
 if base
     V = applyctrl_IRIS(V, meta, F50, 0, 0);
     ob = simseg_IRIS(m, 0, C.TEND, [], V);
@@ -92,7 +92,7 @@ if base
     return
 end
 
-%% ── 1구간 — 호버와 질량 추정 ──
+%% ── Segment 1 — hover and mass estimation ──
 o1   = simseg_IRIS(m, 0, ctx.TSW, [], applyctrl_IRIS(V, meta, F50, 0, 0));
 mest = NaN;
 try
@@ -100,31 +100,31 @@ try
 catch
 end
 
-%% ── 무고장 — 전환이 없으므로 기반 제어기로 끝까지 ──
+%% ── 무고장 — no switching, baseline controller to the end ──
 if nofail
     d  = pull_(simseg_IRIS(m, 0, C.TEND, [], applyctrl_IRIS(V, meta, F50, 0, 0)));
     kc = d.t >= T.CR_ON & d.t <= T.CR_T1;
-    ke = d.t >= T.CR_OFF & d.t <= C.W2(2);                       % 도달 오차 창(호버)
+    ke = d.t >= T.CR_OFF & d.t <= C.W2(2);                       % reach-error window (hover)
     r.crdev  = max(abs(d.alt(kc) - mean(d.alt(kc))));
-    r.crspd  = mean(hypot(diff(d.pn(kc)), diff(d.pe(kc))) ./ max(diff(d.t(kc)), eps));   % 진행 방향 무관
+    r.crspd  = mean(hypot(diff(d.pn(kc)), diff(d.pe(kc))) ./ max(diff(d.t(kc)), eps));   % independent of heading
     r.reH    = mean(hypot(d.pn(ke) - ctx.DEST(1), d.pe(ke) - ctx.DEST(2)));
     r.tiltmax = max(d.tilt);  r.tilt = r.tiltmax;
     r.e = 0;  r.l = 0;  r.alive = true;  r.mest = mest;
     return
 end
 
-%% ── 2구간 — 정상 비행, 감지되는 순간 모델이 스스로 정지 ──
+%% ── Segment 2 — normal flight; the model stops itself at detection ──
 o2   = simseg_IRIS(m, ctx.TSW, C.TEND, o1.opPt, msk_(applyctrl_IRIS(V, meta, F50, 0, 1), over));
 tdet = o2.tout(end);
 
-%% ── 3구간 — 감지 뒤, 파라미터 넷을 전환 ──
+%% ── Segment 3 — after detection, switch the parameters ──
 [f3, sel] = mkctrl_current_IRIS('post', ctx.cdry, C.POFF, mest, over);
-% ★ 감지 지연 갈고리 (over.tdelay [s]) — 감지 뒤 tdelay 동안 기반 제어기 · 주입 0 으로 더 날고 전환한다.
-%   감지 차트(FFDetect)의 주입 타이머는 감지 순간부터 흐르므로 지연 구간과 전환 뒤 모두 nff(ffpar(4))에
-%   지연 표본 수를 더해, 주입이 tdet + tdelay 부터 원래 길이만큼 들어가게 한다. 없거나 0 이면 기존 경로 그대로.
+% ★ Detection delay hook (over.tdelay [s]) — fly tdelay longer with the baseline controller and no injection, then switch.
+%   The injection timer of the detection chart (FFDetect) starts at detection, so the delay samples are added to
+%   nff (ffpar(4)) in both the delay and post-switch segments so injection runs its full length from tdet + tdelay. Absent or 0 = default path.
 tdl = 0;  if isfield(over,'tdelay') && ~isempty(over.tdelay), tdl = over.tdelay; end
-% 지연이 제어 표본 반 개(1.25 ms = 시뮬 간격) 미만이면 nd = 0 이라 주입 타이머도 그대로다 — 지연 없음으로 본다
-% 구간이 시뮬 간격보다 짧으면 "stop time ≤ snapshot time" 오류가 나므로 이 경우를 거른다.
+% A delay below half a control sample (1.25 ms = sim step) gives nd = 0, so it is treated as no delay;
+% a segment shorter than the sim step would raise a "stop time ≤ snapshot time" error.
 if round(tdl / meta.TS) == 0, tdl = 0; end
 if tdl > 0 && tdet < C.TEND - 1e-6
     nd  = round(tdl / meta.TS);
@@ -142,12 +142,12 @@ elseif tdet < C.TEND - 1e-6
     o3 = simseg_IRIS(m, tdet, C.TEND, o2.opPt, msk_(applyctrl_IRIS(V, meta, f3, sel.dsel, 0), over));
     d  = splice_(pull_(o1), pull_(o2), pull_(o3));
 else
-    d  = splice_(pull_(o1), pull_(o2));        % 감지 못 함
+    d  = splice_(pull_(o1), pull_(o2));        % not detected
 end
 
 r = fill_(r, met_(d, ctx));
 r.mest = mest;  r.dsel = sel.dsel;  r.fsel = sel.fsel;  r.tdet = tdet;
-% ★ 신호 보관 갈고리 (over.keepsig) — 지표 경로는 그대로 두고 구간별 원 신호만 이어 붙여 r.sig 로 돌려준다.
+% ★ Signal keep hook (over.keepsig) — metric path unchanged; raw signals of all segments are spliced into r.sig.
 if isfield(over,'keepsig') && over.keepsig
     sg = {o1, o2};
     if exist('o2d','var'), sg{end+1} = o2d; end
@@ -157,7 +157,7 @@ end
 end
 
 function s = sig_(sg)
-%% 원 신호 이어 붙이기 — 위치 · 오일러각 · 몸체 각속도 · 모터 회전수 (겹치는 앞부분은 버린다)
+%% splice raw signals — position · Euler angles · body rates · motor speeds (overlapping starts are dropped)
     nm = {'s_g','Euler_angles','omega_Kb','motor_speed'};
     for j = 1:numel(nm)
         t = [];  X = [];
@@ -171,18 +171,18 @@ function s = sig_(sg)
     end
 end
 
-%% ══════════════ 도우미 ══════════════
+%% ══════════════ helpers ══════════════
 function v = met_(d, ctx)
-%% 지표 — 평가 창은 절대 시각으로 고정
+%% metrics — evaluation windows are fixed in absolute time
     T = ctx.T;  C = ctx.C;
-    a0 = interp1(d.t, d.alt, T.TFAIL, 'linear', d.alt(1));       % 고장 시각 고도
-    s1 = d.t  >= T.TFAIL & d.t  <= T.TFAIL + C.EARLY;            % 초기 창
-    s2 = d.t  >= C.W2(1) & d.t  <= C.W2(2);                      % 후반 창
+    a0 = interp1(d.t, d.alt, T.TFAIL, 'linear', d.alt(1));       % altitude at failure time
+    s1 = d.t  >= T.TFAIL & d.t  <= T.TFAIL + C.EARLY;            % initial window
+    s2 = d.t  >= C.W2(1) & d.t  <= C.W2(2);                      % late-phase window
     t2 = d.te >= C.W2(1) & d.te <= C.W2(2);
     v.e    = a0 - min(d.alt(s1));
     v.l    = a0 - min(d.alt(s2));
     v.tilt = max(d.tilt(t2));
-    sr     = d.t >= T.CR_OFF & d.t <= C.W2(2);                   % 도달 오차 창(호버) — 후반 창과 분리
+    sr     = d.t >= T.CR_OFF & d.t <= C.W2(2);                   % reach-error window (hover) — separate from the late-phase window
     v.reH  = mean(hypot(d.pn(sr) - ctx.DEST(1), d.pe(sr) - ctx.DEST(2)));
     v.alive = (a0 - min(d.alt(d.t >= T.TFAIL))) <= 45 && v.reH <= 5;
 end
@@ -193,7 +193,7 @@ function r = fill_(r, q)
 end
 
 function d = pull_(o)
-%% 로그에서 시계열을 꺼낸다
+%% extract time series from the logs
     t = o.s_g.Time(:).';  P = squeeze(o.s_g.Data);  if size(P,1) ~= 3, P = P.'; end
     d.t = t;  d.pn = P(1,:);  d.pe = P(2,:);  d.alt = -P(3,:);
     te = o.Euler_angles.Time(:).';  E = squeeze(o.Euler_angles.Data);  if size(E,1) ~= 3, E = E.'; end
@@ -203,7 +203,7 @@ function d = pull_(o)
 end
 
 function d = splice_(varargin)
-%% 구간 셋을 이어 붙인다 (겹치는 앞부분은 버린다)
+%% splice segments (overlapping starts are dropped)
     d = varargin{1};
     f = {'t','pn','pe','alt'};  g = {'te','tilt'};
     for i = 2:numel(varargin)
@@ -215,8 +215,8 @@ function d = splice_(varargin)
 end
 
 function V = msk_(V, over)
-%% 주입 대각 쌍 강제 — over.mask = [1 0 1 0] 이면 M1 · M3, [0 1 0 1] 이면 M2 · M4.
-%  없으면 기존 경로(cfg 의 mask = 0, 감지기가 요 오차 부호로 고름). 감지 순간(2구간)부터 같은 값을 넣어야 한다.
+%% force the injection diagonal pair — over.mask = [1 0 1 0] gives M1 · M3, [0 1 0 1] gives M2 · M4.
+%  Absent = default path (cfg mask = 0, the detector picks by the sign of the yaw error). Must be set from detection (segment 2) on.
     if isfield(over, 'mask') && ~isempty(over.mask), V.ffpar(8:11) = over.mask(:); end
 end
 

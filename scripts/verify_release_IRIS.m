@@ -1,15 +1,17 @@
 function verify_release_IRIS()
-%% verify_release_IRIS — 대표 6판을 돌려 지표를 출력한다
+%% verify_release_IRIS — run six representative cases and print the metrics
 %
-% ┌─ 검증 카드 ─────────────────────────────────────────────────────────
-% │ ① 판      가 0 g · 나 340 g · 다 340 g · 다 100 g (M2) · 다 340 g (M3) · 무고장 340 g
-% │ ② 조건    cfg_current_IRIS 그대로 — 아무것도 덮어쓰지 않는다
-% │ ③ 출력    각 판의 지표를 유효숫자 12자리로 찍고 data/verify_release_<릴리스>.mat 에 저장
-% │ ④ 판정    README 의 기대 결과와 맞댄다
-% │ ⑤ 함께    MATLAB 버전 · Java · 설치 툴박스 목록을 찍는다
+% ┌─ Check card ────────────────────────────────────────────────────────
+% │ ① Cases    가 0 g · 나 340 g · 다 340 g · 다 100 g (M2) · 다 340 g (M3) · 무고장 340 g
+% │ ② Settings cfg_current_IRIS as is — nothing is overridden
+% │ ③ Output   metrics of each case to 12 significant digits, saved to data/verify_release_<release>.mat
+% │ ④ Check    compare with the expected results in README
+% │ ⑤ Also     prints MATLAB version · Java · installed toolboxes
 % └─────────────────────────────────────────────────────────────────────
 %
-% 사용법:  matlab -batch "verify_release_IRIS"   (판 6, 약 3~4 분)
+% Case names: 가 = baseline, no payload · 나 = baseline, payload · 다 = proposed, payload · 무고장 = no failure
+%
+% Usage:  matlab -batch "verify_release_IRIS"   (6 cases, about 3–4 min)
 
 addPathFtc();
 rel = version('-release');
