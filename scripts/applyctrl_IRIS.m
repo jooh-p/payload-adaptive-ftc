@@ -1,8 +1,7 @@
 function V = applyctrl_IRIS(V, meta, fm, delta, stopen)
-%% applyctrl_IRIS — 제어기와 선제 추력 파라미터를 시뮬 변수 구조체에 넣는다 (2026-09-22 신설)
+%% applyctrl_IRIS — 제어기와 선제 추력 파라미터를 시뮬 변수 구조체에 넣는다
 %
-% symfinal_IRIS 와 fig3_abc4_IRIS 에 `cvf` 라는 이름으로 복제돼 있던 것.
-% 지속 시간과 마스크는 cfg_current_IRIS 가 단일 출처.
+% 선제 추력 지속 시간과 주입 마스크는 cfg_current_IRIS 에서 읽는다.
 %
 % 입력
 %   V       basevars_IRIS 가 만든 시뮬 변수 구조체

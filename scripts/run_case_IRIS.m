@@ -1,5 +1,5 @@
 function [r, d] = run_case_IRIS(ctx, kind, PM, fail, over)
-%% run_case_IRIS — 제어기 한 판을 돌려 지표를 돌려준다 (2026-09-22 신설)
+%% run_case_IRIS — 제어기 한 판을 돌려 지표를 돌려준다
 %
 % ┌─ 무엇을 돌리나 ─────────────────────────────────────────────────────
 % │ 가      무화물 · 기반 제어기 · 고장 있음          (참조선)
@@ -21,9 +21,9 @@ function [r, d] = run_case_IRIS(ctx, kind, PM, fail, over)
 %   무고장이면 crdev 순항 고도 편차 · crspd 순항 속도 · tiltmax
 %
 % 출력 d  (선택) 그 판의 시계열 — t · pn · pe · alt · te · tilt · tr · r
-%   추종 오차처럼 시계열이 필요한 지표를 밖에서 계산할 때 쓴다(2026-09-23 추가)
+%   추종 오차처럼 시계열이 필요한 지표를 밖에서 계산할 때 쓴다
 %
-% ★ 지표 정의와 평가 창은 `지식/사양/실험환경_규정.md` 2·3절. 값은 cfg_current_IRIS.
+% 평가 창 값은 cfg_current_IRIS.
 
 if nargin < 4 || isempty(fail), fail = 2; end
 if nargin < 5, over = struct(); end
@@ -34,10 +34,10 @@ if strcmp(kind, '가'), PM = 0; end
 
 %% ── 시뮬 변수 ──
 V = basevars_IRIS(ctx.cdry, ctx.m_dry, meta, PM, C.POFF, T, C.TEND, ~nofail);
-% ★ 플랜트 화물 물리 갈고리 (2026-09-30) — ctx.plantmode 가 있을 때만 동작한다.
-%   'box'(기본)  상자 관성 = 위치 관성 + 상자 형상 관성  ← 현행 연구 전제
+% ★ 플랜트 화물 물리 갈고리 — ctx.plantmode 가 있을 때만 동작한다.
+%   'box'(기본)  상자 관성 = 위치 관성 + 상자 형상 관성
 %   'point'      점질량 = 위치 관성만
-%   'massonly'   질량만 늘리고 관성은 무화물 값 그대로   ← 질량 불확실성 비교용
+%   'massonly'   질량만 늘리고 관성은 무화물 값 그대로
 %   ★ 공력 갈고리보다 먼저 둘 것. 뒤에 두면 V.copter 를 통째로 바꿔 aero 를 되돌린다.
 if isfield(ctx,'plantmode') && ~isempty(ctx.plantmode) && ~strcmp(ctx.plantmode,'box')
     switch ctx.plantmode
@@ -50,14 +50,14 @@ if isfield(ctx,'plantmode') && ~isempty(ctx.plantmode) && ~strcmp(ctx.plantmode,
             error('run_case_IRIS:plantmode', '알 수 없는 plantmode: %s', ctx.plantmode);
     end
 end
-% ★ 플랜트 공력 덮어쓰기 갈고리 (2026-09-29) — ctx.plantaero 가 있을 때만 동작한다.
+% ★ 플랜트 공력 덮어쓰기 갈고리 — ctx.plantaero 가 있을 때만 동작한다.
 %   제어기는 ctx.cdry 로 따로 만들므로 여기 값은 **플랜트에만** 들어간다.
 %   예: ctx.plantaero = struct('rate_damp', 0.60)
 if isfield(ctx,'plantaero') && ~isempty(ctx.plantaero)
     fn = fieldnames(ctx.plantaero);
     for kk = 1:numel(fn), V.copter.aero.(fn{kk}) = ctx.plantaero.(fn{kk}); end
 end
-% ★ 심사 대응 갈고리 (2026-10-28) — 셋 다 ctx 에 그 항목이 있을 때만 동작한다. 없으면 기존 경로 그대로.
+% ★ 실험 갈고리 — 셋 다 ctx 에 그 항목이 있을 때만 동작한다. 없으면 기존 경로 그대로.
 %   ctx.plantpatch  {묶음, 항목, 값; ...} — 드론 모델에만 (예 {'prop','I',2*I0; 'bat','V',10.0})
 %   ctx.vars        구조체 — 시뮬 변수를 더한다 (예 잡음 모델의 gyro_sigma · noise_seed)
 %   ctx.blkpar      {블록 경로(모델 이름 뒤), 파라미터, 값; ...} — simseg_IRIS 가 블록 값으로 넘긴다
@@ -106,7 +106,7 @@ if nofail
     kc = d.t >= T.CR_ON & d.t <= T.CR_T1;
     ke = d.t >= T.CR_OFF & d.t <= C.W2(2);                       % 도달 오차 창(호버)
     r.crdev  = max(abs(d.alt(kc) - mean(d.alt(kc))));
-    r.crspd  = mean(hypot(diff(d.pn(kc)), diff(d.pe(kc))) ./ max(diff(d.t(kc)), eps));   % 진행 방향 무관(2026-10-03 선회 추가)
+    r.crspd  = mean(hypot(diff(d.pn(kc)), diff(d.pe(kc))) ./ max(diff(d.t(kc)), eps));   % 진행 방향 무관
     r.reH    = mean(hypot(d.pn(ke) - ctx.DEST(1), d.pe(ke) - ctx.DEST(2)));
     r.tiltmax = max(d.tilt);  r.tilt = r.tiltmax;
     r.e = 0;  r.l = 0;  r.alive = true;  r.mest = mest;
@@ -119,12 +119,12 @@ tdet = o2.tout(end);
 
 %% ── 3구간 — 감지 뒤, 파라미터 넷을 전환 ──
 [f3, sel] = mkctrl_current_IRIS('post', ctx.cdry, C.POFF, mest, over);
-% ★ 감지 지연 갈고리 (2026-10-28, over.tdelay [s]) — 감지 뒤 tdelay 동안 기반 제어기 · 주입 0 으로 더 날고 전환한다.
+% ★ 감지 지연 갈고리 (over.tdelay [s]) — 감지 뒤 tdelay 동안 기반 제어기 · 주입 0 으로 더 날고 전환한다.
 %   감지 차트(FFDetect)의 주입 타이머는 감지 순간부터 흐르므로 지연 구간과 전환 뒤 모두 nff(ffpar(4))에
 %   지연 표본 수를 더해, 주입이 tdet + tdelay 부터 원래 길이만큼 들어가게 한다. 없거나 0 이면 기존 경로 그대로.
 tdl = 0;  if isfield(over,'tdelay') && ~isempty(over.tdelay), tdl = over.tdelay; end
 % 지연이 제어 표본 반 개(1.25 ms = 시뮬 간격) 미만이면 nd = 0 이라 주입 타이머도 그대로다 — 지연 없음으로 본다
-% (2026-10-29, 0.6 ms 에서 구간이 시뮬 간격보다 짧아 "stop time ≤ snapshot time" 오류. 1.25 ms 이상은 경로 불변)
+% 구간이 시뮬 간격보다 짧으면 "stop time ≤ snapshot time" 오류가 나므로 이 경우를 거른다.
 if round(tdl / meta.TS) == 0, tdl = 0; end
 if tdl > 0 && tdet < C.TEND - 1e-6
     nd  = round(tdl / meta.TS);
@@ -147,7 +147,7 @@ end
 
 r = fill_(r, met_(d, ctx));
 r.mest = mest;  r.dsel = sel.dsel;  r.fsel = sel.fsel;  r.tdet = tdet;
-% ★ 신호 보관 갈고리 (2026-10-29, over.keepsig) — 지표 경로는 그대로 두고 구간별 원 신호만 이어 붙여 r.sig 로 돌려준다.
+% ★ 신호 보관 갈고리 (over.keepsig) — 지표 경로는 그대로 두고 구간별 원 신호만 이어 붙여 r.sig 로 돌려준다.
 if isfield(over,'keepsig') && over.keepsig
     sg = {o1, o2};
     if exist('o2d','var'), sg{end+1} = o2d; end
@@ -182,7 +182,7 @@ function v = met_(d, ctx)
     v.e    = a0 - min(d.alt(s1));
     v.l    = a0 - min(d.alt(s2));
     v.tilt = max(d.tilt(t2));
-    sr     = d.t >= T.CR_OFF & d.t <= C.W2(2);                   % 도달 오차 창(호버) — 후반 창과 분리(2026-10-03)
+    sr     = d.t >= T.CR_OFF & d.t <= C.W2(2);                   % 도달 오차 창(호버) — 후반 창과 분리
     v.reH  = mean(hypot(d.pn(sr) - ctx.DEST(1), d.pe(sr) - ctx.DEST(2)));
     v.alive = (a0 - min(d.alt(d.t >= T.TFAIL))) <= 45 && v.reH <= 5;
 end
@@ -215,7 +215,7 @@ function d = splice_(varargin)
 end
 
 function V = msk_(V, over)
-%% 주입 대각 쌍 강제 (2026-10-28 진단) — over.mask = [1 0 1 0] 이면 M1 · M3, [0 1 0 1] 이면 M2 · M4.
+%% 주입 대각 쌍 강제 — over.mask = [1 0 1 0] 이면 M1 · M3, [0 1 0 1] 이면 M2 · M4.
 %  없으면 기존 경로(cfg 의 mask = 0, 감지기가 요 오차 부호로 고름). 감지 순간(2구간)부터 같은 값을 넣어야 한다.
     if isfield(over, 'mask') && ~isempty(over.mask), V.ffpar(8:11) = over.mask(:); end
 end
